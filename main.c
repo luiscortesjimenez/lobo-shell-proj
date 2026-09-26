@@ -32,8 +32,31 @@ int main() {
 
         int num_words = split_cmd_line(line, line_words);
 
-        for (int i=0; i < num_words; i++) {
-            printf("%s\n", line_words[i]);
+        // for blank lines do nothing
+        if (num_words == 0) {
+            continue;
+        }
+
+        pid_t pid;
+        switch (pid = fork()) {
+            case -1:
+                perror("fork");
+                exit(1);
+                break;
+            case 0:
+                // for child process replace with the requested program
+                execvp(line_words[0], line_words);
+                // if execvp returns tgen it failed
+                perror(line_words[0]);
+                exit(1);
+                break;
+            default:
+                // for parent process wait for the child to finish
+                if (wait(NULL) == -1) {
+                    perror("wait");
+                    exit(1);
+                }
+                break;
         }
     }
 
