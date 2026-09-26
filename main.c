@@ -64,6 +64,37 @@ int main() {
                 }
             }
 
+            // scan this cmds argv for < > >> and pull out the file names
+            // flip each operator and filename into NULL so execvp doesnt see them
+            // check >> before > so > doesnt match the first char of >>
+            char* infile = NULL;
+            char* outfile = NULL;
+            int append_mode = 0;
+            char** argv = cmd_starts[i];
+            for (int j = 0; argv[j] != NULL; j++) {
+                char* tok = argv[j];
+                if (tok[0] == INPUT_REDIRECT && tok[1] == '\0') {
+                    infile = argv[j + 1];
+                    argv[j] = NULL;
+                    argv[j + 1] = NULL;
+                    j++;
+                } 
+                else if (tok[0] == OUTPUT_REDIRECT && tok[1] == OUTPUT_REDIRECT && tok[2] == '\0') {
+                    outfile = argv[j + 1];
+                    append_mode = 1;
+                    argv[j] = NULL;
+                    argv[j + 1] = NULL;
+                    j++;
+                } 
+                else if (tok[0] == OUTPUT_REDIRECT && tok[1] == '\0') {
+                    outfile = argv[j + 1];
+                    append_mode = 0;
+                    argv[j] = NULL;
+                    argv[j + 1] = NULL;
+                    j++;
+                }
+            }
+
             switch (pid = fork()) {
                 case -1:
                     perror("fork");
@@ -93,9 +124,45 @@ int main() {
                             exit(1);
                         }
                     }
-                    execvp(cmd_starts[i][0], cmd_starts[i]);
-                    // if execvp returns tgen it failed
-                    perror(cmd_starts[i][0]);
+
+                    // add file redirects last so it overrides the pipe dup2s
+                    if (infile != NULL) {
+                        int fd = open(infile, O_RDONLY);
+                        if (fd == -1) {
+                            perror(infile);
+                            exit(1);
+                        }
+                        if (dup2(fd, STDIN_FILENO) == -1) {
+                            perror("dup2");
+                            exit(1);
+                        }
+                        if (close(fd) == -1) {
+                            perror("close");
+                            exit(1);
+                        }
+                    }
+                    if (outfile != NULL) {
+                        // this is for test 5 and was debugged with the help of claude
+                        // 0666 so umask 002 gives a 664 file
+                        int flags = O_WRONLY | O_CREAT | (append_mode ? O_APPEND : O_TRUNC);
+                        int fd = open(outfile, flags, 0666);
+                        if (fd == -1) {
+                            perror(outfile);
+                            exit(1);
+                        }
+                        if(dup2(fd, STDOUT_FILENO) == -1){
+                            perror("dup2");
+                            exit(1);
+                        }
+                        if(close(fd) == -1){
+                            perror("close");
+                            exit(1);
+                        }
+                    }
+
+                    execvp(argv[0], argv);
+                    // if execvp returns then it failed
+                    perror(argv[0]);
                     exit(1);
                     break;
                 default:
